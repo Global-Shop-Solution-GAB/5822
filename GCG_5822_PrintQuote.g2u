@@ -1,0 +1,75 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Sub_Err")
+F.Intrinsic.Control.ClearErrors
+
+'this is only for BI hook 16090 handling of these custom reports.
+V.Local.sError.Declare(String)
+v.Local.iret.Declare(Long)
+v.Local.sSQL.Declare(String)
+v.Local.iRptID.Declare(Long)
+v.Local.sparams.Declare(String)
+v.Local.svals.Declare(String)
+
+	f.Intrinsic.Control.SelectCase(v.Passed.BIP_REPORTID)
+		'quote
+		f.Intrinsic.Control.Case("000001")
+			f.Intrinsic.UI.Msgbox("Print Itemized Quote?","Print Itemized Quote?",4,v.Local.iRet)
+			f.Intrinsic.Control.If(v.Local.iret,=,6)
+				v.Passed.CANCEL.Set(1)
+				v.Local.sParams.Set("Terminal*!*REPORTID*!*REV*!*PRTEXT*!*PRTTOT*!*PRTALL*!*COMMENTS")
+				f.Intrinsic.String.Build("{0}*!*{1}*!*{2}*!*{3}*!*{4}*!*{5}*!*{6}",v.Passed.BIP_Terminal,v.Passed.BIP_REPORTID,v.Passed.BIP_REV,v.Passed.BIP_PRTEXT,v.Passed.BIP_PRTTOT,v.Passed.BIP_PRTALL,v.Passed.BIP_COMMENTS,v.Local.svals)
+				f.Global.BI.GetIDFromName("GCG_5822_QuoteAck.rpt",v.Local.iRptID)
+'				f.Intrinsic.UI.Sleep(1)
+				f.Intrinsic.String.Split(v.Local.sparams,"*!*",v.Local.sparams)
+				f.Intrinsic.String.Split(v.Local.svals,"*!*",v.Local.svals)
+				f.Global.BI.PrintReport(v.Local.iRptID,0,v.Local.sparams,v.Local.svals,"",False)
+			f.Intrinsic.Control.EndIf
+		'Acknowledgement	
+		f.Intrinsic.Control.Case("000054")
+					
+			f.Intrinsic.UI.Msgbox("Print Itemized Acknowledgement?","Print Itemized Acknowledgement?",4,v.Local.iRet)
+			f.Intrinsic.Control.If(v.Local.iret,=,6)
+				v.Passed.CANCEL.Set(1)
+				v.Local.sParams.Set("Terminal*!*REPORTID*!*Includestax*!*DEC*!*COMMENTS")
+				f.Intrinsic.String.Build("{0}*!*{1}*!*{2}*!*{3}*!*{4}",v.Passed.BIP_Terminal,v.Passed.BIP_REPORTID,v.Passed.BIP_Includestax,v.Passed.BIP_DEC,v.Passed.BIP_COMMENTS,v.Local.svals)
+				f.Global.BI.GetIDFromName("GCG_5822_OE_ACK_ITEMS.rpt",v.Local.iRptID)
+'				f.Intrinsic.UI.Sleep(1)
+				f.Intrinsic.String.Split(v.Local.sparams,"*!*",v.Local.sparams)
+				f.Intrinsic.String.Split(v.Local.svals,"*!*",v.Local.svals)
+				f.Global.BI.PrintReport(v.Local.iRptID,0,v.Local.sparams,v.Local.svals,"",False)
+			f.Intrinsic.Control.EndIf
+		'Invoice	
+		f.Intrinsic.Control.Case("000055")
+					
+			f.Intrinsic.UI.Msgbox("Print Itemized Invoice?","Print Itemized Invoice?",4,v.Local.iRet)
+				
+			f.Intrinsic.Control.If(v.Local.iret,=,6)
+				v.Passed.CANCEL.Set(1)
+				v.Local.sParams.Set("Terminal*!*REPORTID*!*TRACK*!*PROGRAM*!*IVCTYPE*!*PRTSHIP*!*PRTORD")
+				f.Intrinsic.String.Build("{0}*!*{1}*!*{2}*!*{3}*!*{4}*!*{5}*!*{6}",v.Passed.BIP_Terminal,v.Passed.BIP_REPORTID,v.Passed.BIP_TRACK,v.Passed.BIP_PROGRAM,v.Passed.BIP_IVCTYPE,v.Passed.BIP_PRTSHIP,v.Passed.BIP_PRTORD,v.Local.svals)
+				f.Global.BI.GetIDFromName("GCG_5822_OE_INV_ITEMS.rpt",v.Local.iRptID)
+'				f.Intrinsic.UI.Sleep(1)
+				f.Intrinsic.String.Split(v.Local.sparams,"*!*",v.Local.sparams)
+				f.Intrinsic.String.Split(v.Local.svals,"*!*",v.Local.svals)
+				f.Global.BI.PrintReport(v.Local.iRptID,0,v.Local.sparams,v.Local.svals,"",False)
+			f.Intrinsic.Control.EndIf
+			
+		f.Intrinsic.Control.CaseElse
+			f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndSelect
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Sub_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: Project",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+
+
+Program.Sub.Main.End
