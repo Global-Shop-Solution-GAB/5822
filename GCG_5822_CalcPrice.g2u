@@ -1,0 +1,224 @@
+Program.Sub.Preflight.Start
+v.Global.sRouter.Declare(String)
+v.Global.sQuoteNo.Declare(String)
+v.Global.sRecNo.Declare(String)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'coded for J-Tech by SFF on 2/19/2020 
+'this project does a price build up using custom logic for router material cost (i.e. use inventory list price instead of router line cost)
+'it sets the price as calcuated on quote lines screen. 
+'it stores the itemized detail of build up in custom table. 
+'custom quotation crystal report will have sub-report that pulls in data based on quote-line for that itemized list
+
+f.Intrinsic.Control.If(v.Caller.Hook,=,10260)
+	v.Passed.000203.Set("Calc Price")
+f.Intrinsic.Control.ElseIf(v.Caller.Hook,=,12010)
+	v.Passed.000210.Set("Calc Price")
+f.Intrinsic.Control.Else
+	f.Intrinsic.UI.InvokeWaitDialog("Calculating Price, please wait...")
+	f.ODBC.Connection!con.opencompanyconnection
+	'only supported for hooks 10690-script-3-hook and 12410 on order lines script 3.
+	f.Intrinsic.Control.CallSub(calcPrice)
+	'set returned price for selected line
+	f.Intrinsic.Control.If(v.Caller.Hook,=,10690)
+		'quote
+		v.Passed.000009.Set(v.Args.calcPriceRet)
+	f.Intrinsic.Control.ElseIf(v.Caller.Hook,=,12430)
+
+		'order lines
+		v.Passed.000009.Set(v.Args.calcPriceRet)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.UI.CloseWaitDialog
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5822_CalcPrice.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.calcPrice.Start
+F.Intrinsic.Control.SetErrorHandler("calcPrice_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.i.Declare(long)
+v.Local.sSQL.Declare(String)
+v.Local.iPrice.Declare(Float)
+v.Local.sTemp.Declare(String)
+v.Local.iTemp.Declare(Float)
+v.Local.sTemp2.Declare(String)
+v.Local.sPartRev.Declare(String)
+'v.passed.000051 - line-item-3 on hook 10370 and 10690
+'v.passed.000053 = rev. need to build in rev with part for query to work
+'v.passed.000060 - quote-num on hook 10370 and 10690
+
+'this will look for a router and if there is no router, it will exit. 
+'if there is a router then it will write an itemized list for only the L and M type lines and for Material lines, 
+'it will use the list price from inventory master if there is no list price then it will default to use the router cost.
+
+'run checks first before continuing.
+'if part not selected, exit. 
+f.Intrinsic.Control.If(v.Passed.000052,=,"")
+	f.Intrinsic.UI.Msgbox("No Part Selected","Select Part First")
+	f.Intrinsic.Control.End
+
+f.Intrinsic.Control.EndIf
+
+'check to see if router exists. 
+f.Intrinsic.String.GSSPartString(v.Passed.000052,v.Passed.000053,v.Local.sPartRev)
+f.Intrinsic.String.Build("Select ROUTER from v_ROUTER_HEADER where ROUTER = '{0}'",v.Local.sPartRev,v.Local.sSQL)
+f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL,v.Local.sTemp)
+f.Intrinsic.Control.If(v.Local.sTemp,=,"")
+	f.Intrinsic.UI.Msgbox("No Router Created For Part","Cannot Itemize without Router!")
+	f.Intrinsic.Control.End
+
+f.Intrinsic.Control.Else
+	'!!!if quote, set variables.
+'	f.Intrinsic.Control.If(v.Caller.Hook,=,10690)
+'		'set variables used to continue on
+'		v.Global.sRouter.Set(v.Local.sTemp)
+'		f.Intrinsic.String.LPad(v.Passed.000060,"0",7,v.Global.sQuoteNo)
+'		f.Intrinsic.String.LPad(v.Passed.000051,"0",3,v.Global.sRecNo)
+'		f.Intrinsic.String.RPad(v.Global.sRecNo,"0",4,v.Global.sRecNo)
+'	f.Intrinsic.Control.ElseIf(v.Caller.Hook,=,12410)
+'		'set variables used to continue on
+'		v.Global.sRouter.Set(v.Local.sTemp)
+'		f.Intrinsic.String.LPad(v.Passed.000000,"0",7,v.Global.sQuoteNo)
+'		f.Intrinsic.String.LPad(v.Passed.000000,"0",3,v.Global.sRecNo)
+'		f.Intrinsic.String.RPad(v.Global.sRecNo,"0",4,v.Global.sRecNo)
+'	f.Intrinsic.Control.EndIf
+
+'clarified with mike yorgey, the router is always unique so it will only store by Router#
+v.Global.sRouter.Set(v.Local.sTemp)	
+	
+	'!!!if order set variables.
+	
+	
+f.Intrinsic.Control.EndIf
+
+'!!!if order select query.
+	f.Intrinsic.String.Build("select rtrim(PART_WC_OUTSIDE) as PART_WC,DESC_RT_LINE as DESCRIPTION,RUN_TIME as QUANTITY,UM_INVENTORY as UOM,RATE as RATE_PRICE,LINE_ROUTER,LMO, ROUTER from v_ROUTER_LINE where ROUTER = '{0}' and LMO in ('L','M','O','C') order by line_router;",v.Global.sRouter,v.Local.sSQL)
+	f.Data.DataTable.CreateFromSQL("Router","con",v.Local.sSQL,True)
+
+'routers are not location specific so it looks for the material where amt-price > 0 only, this way it will default to the router line cost if no result is found
+'change 2/25 for labor steps get bill rate and if zero then use standard rate from router line
+f.Intrinsic.Control.If(v.DataTable.Router.RowCount--,<>,-1)
+	'loop through the M lines and get price if it exists. 
+	f.Intrinsic.Control.For(v.Local.i,0,v.DataTable.Router.RowCount--,1)
+		f.Intrinsic.Control.If(v.DataTable.Router(v.Local.i).LMO!FieldValtrim,=,"M")
+			'get part price
+			f.Intrinsic.String.Build("select top 1 cast(AMT_PRICE as numeric(12,6)) as AMT_PRICE from v_INVENTORY_ALL where PART = '{0}' and AMT_PRICE >= 0 order by AMT_PRICE DESC;",v.DataTable.Router(v.Local.i).PART_WC!FieldValTrim,v.Local.sSQL)
+			f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL,v.Local.sTemp)
+			f.Intrinsic.Control.If(v.Local.sTemp,<>,"")
+				f.Intrinsic.Control.If(v.Local.sTemp.float,>,0)
+					f.Data.DataTable.SetValue("Router",v.Local.i,"RATE_PRICE",v.Local.sTemp)
+				f.Intrinsic.Control.Else
+					'add * to part prefix to tell user this is not using a list price or bill rate
+					f.Intrinsic.String.Build("*{0}",v.DataTable.Router(v.Local.i).PART_WC!FieldValTrim,v.Local.sTemp2)
+					f.Data.DataTable.SetValue("Router",v.Local.i,"PART_WC",v.Local.sTemp2)
+				f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.Else
+				'add * to part prefix to tell user this is not using a list price or bill rate
+				f.Intrinsic.String.Build("*{0}",v.DataTable.Router(v.Local.i).PART_WC!FieldValTrim,v.Local.sTemp2)
+				f.Data.DataTable.SetValue("Router",v.Local.i,"PART_WC",v.Local.sTemp2)
+			f.Intrinsic.Control.EndIf
+			
+		f.Intrinsic.Control.else
+			'get bill rate for labor steps.
+			f.Intrinsic.string.Build("Select STANDARD_BILL from v_WORKCENTERS where MACHINE = '{0}'",v.DataTable.Router(v.Local.i).PART_WC!FieldValTrim,v.Local.sSQL)
+			f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL,v.Local.sTemp)
+			f.Intrinsic.Control.If(v.Local.sTemp,<>,"")
+				f.Intrinsic.Control.If(v.Local.sTemp.float,>,0)
+					f.Data.DataTable.SetValue("Router",v.Local.i,"RATE_PRICE",v.Local.sTemp)
+				f.Intrinsic.Control.Else
+					'add * to part prefix to tell user this is not using a list price or bill rate
+					f.Intrinsic.String.Build("*{0}",v.DataTable.Router(v.Local.i).PART_WC!FieldValTrim,v.Local.sTemp2)
+					f.Data.DataTable.SetValue("Router",v.Local.i,"PART_WC",v.Local.sTemp2)
+				f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.Else
+				'add * to part prefix to tell user this is not using a list price or bill rate
+				f.Intrinsic.String.Build("*{0}",v.DataTable.Router(v.Local.i).PART_WC!FieldValTrim,v.Local.sTemp2)
+				f.Data.DataTable.SetValue("Router",v.Local.i,"PART_WC",v.Local.sTemp2)
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.Next(v.Local.i)
+	
+	'!!!if quote delete by quote.
+		'since this is a quotation we can delete the records and use 128 to save because it is way faster than mode 256 for adding only
+		f.Intrinsic.String.Build("Delete from GCG_5822_ROUTER_LINES where ROUTER = '{0}'",v.Global.sRouter,v.Local.sSQL)
+		f.ODBC.Connection!con.Execute(v.Local.sSQL)
+	
+	'!!!if order build another query. delete by router.
+	
+	'save record before writing total unit price
+
+	'remove temp column before saving, was only using this for check
+	f.Data.DataTable.RemoveColumn("Router","LMO")
+
+	'DD - 9/15/2020 - Added part extended description per Mike Y's request
+	f.Intrinsic.String.Build("select a.line_router, isnull(b.text,'') +  char(13)  + isnull(C.text,'') as Text from v_router_line a left join v_inv_extra_text b on a.part_wc_outside=b.part left join v_rtr_seq_comments c on a.router=c.rtr_number and a.line_router=c.rtr_seq where a.router='{0}'",v.Global.sRouter,v.Local.sSQL)
+	f.Data.Dictionary.CreateFromSQL("dictPartDescExt","con",v.Local.sSQL)
+	f.Data.Dictionary.SetDefaultReturn("dictPartDescExt","")
+	f.Data.DataTable.AddColumn("Router","EXT_DESC","string")
+'	f.Data.DataTable.AddExpressionColumn("Router","PartNoStar","string","iif(PART_WC like '[*]%',SUBSTRING(PART_WC,2,LEN(PART_WC)-1),PART_WC)")
+	f.Data.DataTable.FillFromDictionary("Router","dictPartDescExt","LINE_ROUTER","EXT_DESC")
+	f.Data.Dictionary.Close("dictPartDescExt")
+	
+	'loop through and remove preceeding carriage return if exists. 
+	f.Intrinsic.Control.For(v.Local.i,0,v.DataTable.Router.RowCount--,1)
+
+	
+		f.Intrinsic.String.Left(v.DataTable.Router(v.Local.i).EXT_DESC!FieldValTrim,1,v.Local.sTemp)
+		f.Intrinsic.Control.If(v.Local.sTemp,=,v.ASCII.13)
+			f.Intrinsic.String.Len(v.DataTable.Router(v.Local.i).EXT_DESC!FieldValTrim,v.Local.iTemp)
+			f.Intrinsic.Math.Sub(v.Local.iTemp,1,v.Local.iTemp)
+			f.Intrinsic.String.Right(v.DataTable.Router(v.Local.i).EXT_DESC!FieldValTrim,v.Local.iTemp,v.Local.sTemp)
+			f.Data.DataTable.SetValue("Router",v.Local.i,"EXT_DESC",v.Local.sTemp)
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.Next(v.Local.i)
+	
+	'!!! added router to table 3/10/2021 per mike yorgey at j-tech the router is always unique per order line if new router so same router will not exist on differnt orders.
+	f.Data.DataTable.SaveToDB("Router","con","GCG_5822_ROUTER_LINES","ROUTER*!*LINE_ROUTER",128,"PART_WC@!@PART_WC*!*DESCRIPTION@!@DESCRIPTION*!*QUANTITY@!@QUANTITY*!*UOM@!@UOM*!*RATE_PRICE@!@RATE_PRICE*!*LINE_ROUTER@!@LINE_ROUTER*!*EXT_DESC@!@EXT_DESC*!*ROUTER@!@ROUTER")
+
+
+	'now we need to return the total unit price to the screen. 
+	'add expression column for qty * price
+	f.Data.DataTable.AddExpressionColumn("Router","CalcPrice","Float","QUANTITY * RATE_PRICE")
+
+	'now sum expression column
+	f.Data.DataTable.Compute("Router","SUM(CalcPrice)","",v.Local.iTemp)
+	'set summary value as return variable for main sub that sets the passed var on core screen
+	f.Intrinsic.Variable.AddRV("calcPriceRet",v.Local.iTemp)
+
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("calcPrice_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_5822_CalcPrice.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.calcPrice.End
+
+Program.Sub.Comments.Start
+${$0$}$$}$-1$}$2/19/2020 12:04:31 PM$}$True
+${$3$}$0$}$$}$0$}$-1$}$$}$12:00:00 AM$}$'coded for J-Tech.
+${$5$}$2.0.0.0$}$2
+${$6$}$dduncan$}$20200915101450456$}$r0o+00bj735YsiGsQ60YIo/Zb+26OZQGA5FG/fw2StnADmtKQZL5wiYMI4i2ve7PDGnlEPiGU5k=
+Program.Sub.Comments.End
